@@ -24,41 +24,48 @@ writeFileSync(tmp, code);
 const { paginate } = await import(tmp.pathname);
 
 // xorshift32 随机文档（与 src/core/sample.ts 同一发生器，逻辑内联以免再转译 TS）
-function randomDoc(n, pageHeight, seed) {
+function randomDoc(n, pageHeight, seed, backPageHeight) {
   let s = seed >>> 0;
   const rand = () => {
     s ^= s << 13; s ^= s >>> 17; s ^= s << 5; s = s >>> 0;
     return s / 0xffffffff;
   };
+  const hmax = backPageHeight === undefined ? pageHeight : Math.min(pageHeight, backPageHeight);
   const blocks = Array.from({ length: n }, (_, i) => ({
-    id: `b${i + 1}`, height: 1 + Math.floor(rand() * pageHeight), edge: 0,
+    id: `b${i + 1}`, height: 1 + Math.floor(rand() * hmax), edge: 0,
   }));
   let chainSum = 0;
   for (let i = 0; i < n - 1; i++) {
     const r = rand();
     if (r < 0.12) { blocks[i].edge = 1; chainSum = 0; }
-    else if (r < 0.3 && chainSum + blocks[i].height + blocks[i + 1].height <= pageHeight) {
+    else if (r < 0.3 && chainSum + blocks[i].height + blocks[i + 1].height <= hmax) {
       blocks[i].edge = 2; chainSum += blocks[i].height;
     } else { chainSum = 0; }
   }
-  return { pageHeight, blocks };
+  return backPageHeight === undefined
+    ? { pageHeight, blocks }
+    : { pageHeight, backPageHeight, blocks };
 }
 
 function validate(model, out) {
   if (!out.ok) throw new Error('expected feasible: ' + JSON.stringify(out.error));
   const { pages, cost } = out.result;
+  const duplex = model.backPageHeight !== undefined;
   let prev = 0, recomputed = 0;
-  for (const p of pages) {
+  pages.forEach((p, idx) => {
     if (p.start !== prev) throw new Error('pages not contiguous');
     prev = p.end;
     let used = 0;
     for (let k = p.start; k < p.end; k++) used += model.blocks[k].height;
-    if (used !== p.used || used > model.pageHeight) throw new Error('capacity violation');
+    const cap = duplex ? (idx % 2 === 0 ? model.pageHeight : model.backPageHeight) : model.pageHeight;
+    if (used !== p.used || used > cap) throw new Error('capacity violation');
+    if (duplex && p.side !== (idx % 2 === 0 ? 'front' : 'back')) throw new Error('side parity');
+    if (duplex && p.capacity !== cap) throw new Error('page capacity field');
     for (let k = p.start; k < p.end - 1; k++) {
       if (model.blocks[k].edge === 1) throw new Error('break inside page');
     }
-    recomputed += (model.pageHeight - used) ** 2;
-  }
+    recomputed += (cap - used) ** 2;
+  });
   if (prev !== model.blocks.length) throw new Error('pages do not cover all blocks');
   if (recomputed !== cost) throw new Error('cost mismatch');
 }
@@ -70,6 +77,8 @@ const cases = [
     pageHeight: 1,
     blocks: Array.from({ length: 200_000 }, (_, i) => ({ id: i, height: 1, edge: 0 })),
   })],
+  ['双面随机可行 200000 / 正 1000 背 700', () => randomDoc(200_000, 1000, 0x5151aaaa, 700)],
+  ['双面极端容量 200000 / 正 10000 背 1', () => randomDoc(200_000, 10000, 0x0badf00d, 1)],
 ];
 
 let maxElapsed = 0;

@@ -192,5 +192,18 @@ select {
   height: 100%;
   background: linear-gradient(90deg, var(--green), var(--accent));
 }
+.side-chip {
+  margin-left: 6px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.side-front { background: rgba(77, 163, 255, 0.16); color: var(--accent); border: 1px solid rgba(77, 163, 255, 0.45); }
+.side-back { background: rgba(181, 141, 255, 0.16); color: var(--purple); border: 1px solid rgba(181, 141, 255, 0.45); }
+.pagecard.pc-front { border-left: 3px solid var(--accent); }
+.pagecard.pc-back { border-left: 3px solid var(--purple); }
+.duplex-tag { background: rgba(181, 141, 255, 0.16); color: var(--purple); border: 1px solid rgba(181, 141, 255, 0.4); }
 
 .empty { color: var(--muted); padding: 24px; text-align: center; }

@@ -31,6 +31,12 @@ function snapshotModel(model: DocModel): DocModel {
   return { ...model, blocks: model.blocks.map((b) => ({ ...b })) };
 }
 
+/** 面别中文标签：第 1 页正面，此后正反交替。 */
+function sideLabel(side?: 'front' | 'back'): string {
+  const isFront = side === undefined ? true : side === 'front';
+  return isFront ? '正面' : '背面';
+}
+
 function errorText(error: PaginateError): string {
   if (error.kind === 'conflict') {
     return `存在 ${error.conflicts.length} 处冲突边界（强制分页与同页同置），已在左侧标红，禁止计算`;
@@ -189,12 +195,15 @@ export default function App() {
     setNotice('已载入 200000 块随机大夹具（可行边界），用于四秒性能验收。');
   };
 
-  // 当前块下标 -> 页号（仅在最新成功结果且未脏时有效）。
+  // 当前块下标 -> 页号+面别（编码为 2*页号 + (背面?1:0)；-1 无），双面时还原面别。
   const pageOfBlock = useMemo(() => {
     if (!model || !fresh || fresh.status !== 'ok' || fresh.stale) return null;
+    const duplex = model.backPageHeight !== undefined;
     const map = new Int32Array(model.blocks.length).fill(-1);
     fresh.result.pages.forEach((p, idx) => {
-      for (let k = p.start; k < p.end; k++) map[k] = idx + 1;
+      const pageNo = idx + 1;
+      const isBack = duplex && p.side === 'back';
+      for (let k = p.start; k < p.end; k++) map[k] = pageNo * 2 + (isBack ? 1 : 0);
     });
     return map;
   }, [model, fresh]);
@@ -209,7 +218,7 @@ export default function App() {
       <section className="import">
         <div className="row">
           <textarea
-            placeholder='粘贴 JSON：{ "pageHeight": 300, "blocks": [ { "id": 1, "height": 100 } ] }'
+            placeholder='粘贴 JSON：{ "pageHeight": 300, "backPageHeight": 260, "blocks": [ { "id": 1, "height": 100 } ] }（backPageHeight 可省略）'
             value={importText}
             onChange={(e) => setImportText(e.target.value)}
             rows={3}
@@ -239,7 +248,15 @@ export default function App() {
         <section className="workbench">
           <div className="toolbar">
             <div className="docmeta">
-              页容量 <b>{model.pageHeight}</b> · 共 <b>{model.blocks.length}</b> 块
+              {model.backPageHeight === undefined ? (
+                <>页容量 <b>{model.pageHeight}</b>（单面）</>
+              ) : (
+                <>
+                  正面容量 <b>{model.pageHeight}</b> · 背面容量 <b>{model.backPageHeight}</b>
+                  <span className="tag duplex-tag">双面 · 第 1 页正面，正反交替</span>
+                </>
+              )}
+              {' · 共 '}<b>{model.blocks.length}</b> 块
               {conflicts.length > 0 && <span className="tag conflict-tag">冲突 {conflicts.length} 处</span>}
               {fresh?.stale && <span className="tag stale-tag">结果已过期：边界被修改，请重新计算</span>}
               {adopted && <span className="tag adopted-tag">已采纳 {adopted.result.pages.length} 页版本</span>}
@@ -338,7 +355,11 @@ export default function App() {
                         <em className="muted">末块</em>
                       )}
                     </span>
-                    <span>{pageOfBlock ? pageOfBlock[i] || '' : ''}</span>
+                    <span>
+                      {pageOfBlock && pageOfBlock[i] >= 0
+                        ? `${pageOfBlock[i] >> 1}${pageOfBlock[i] % 2 === 1 ? ' 背' : model.backPageHeight !== undefined ? ' 正' : ''}`
+                        : ''}
+                    </span>
                   </div>
                 )}
               />
@@ -401,10 +422,13 @@ function ResultPanel({
   }
 
   const { result, elapsedMs, stale } = fresh;
+  const duplex = model.backPageHeight !== undefined;
+  const frontCount = duplex ? result.pages.filter((p) => p.side !== 'back').length : 0;
+  const backCount = duplex ? result.pages.length - frontCount : 0;
   return (
     <div>
       <div className={`summary ${stale ? 'stale' : ''}`}>
-        <div><span className="k">页数</span><b>{result.pages.length}</b></div>
+        <div><span className="k">页数</span><b>{result.pages.length}</b>{duplex && <span className="muted small">（正面 {frontCount} · 背面 {backCount}）</span>}</div>
         <div><span className="k">代价 Σ剩余²</span><b>{result.cost}</b></div>
         <div>
           <span className="k">范围</span>
@@ -429,23 +453,29 @@ function ResultPanel({
         items={result.pages}
         rowHeight={58}
         height={360}
-        renderRow={(p, idx) => (
-          <div className="pagecard">
-            <div className="pc-head">
-              <b>第 {idx + 1} 页</b>
-              <span className="muted">
-                块 {p.start + 1}–{p.end} · id {String(model.blocks[p.start].id)} →{' '}
-                {String(model.blocks[p.end - 1].id)}
-              </span>
+        renderRow={(p, idx) => {
+          const capacity = p.capacity ?? model.pageHeight;
+          return (
+            <div className={`pagecard ${p.side === 'back' ? 'pc-back' : p.side === 'front' ? 'pc-front' : ''}`}>
+              <div className="pc-head">
+                <b>
+                  第 {idx + 1} 页
+                  {p.side && <span className={`side-chip ${p.side === 'back' ? 'side-back' : 'side-front'}`}>{sideLabel(p.side)}</span>}
+                </b>
+                <span className="muted">
+                  块 {p.start + 1}–{p.end} · id {String(model.blocks[p.start].id)} →{' '}
+                  {String(model.blocks[p.end - 1].id)}
+                </span>
+              </div>
+              <div className="pc-bar">
+                <div className="pc-used" style={{ width: `${(p.used / capacity) * 100}%` }} />
+              </div>
+              <div className="muted small">
+                已用 {p.used} / {capacity} · 剩余 {p.remaining} · 剩余² {p.remaining * p.remaining}
+              </div>
             </div>
-            <div className="pc-bar">
-              <div className="pc-used" style={{ width: `${(p.used / model.pageHeight) * 100}%` }} />
-            </div>
-            <div className="muted small">
-              已用 {p.used} / {model.pageHeight} · 剩余 {p.remaining} · 剩余² {p.remaining * p.remaining}
-            </div>
-          </div>
-        )}
+          );
+        }}
       />
     </div>
   );

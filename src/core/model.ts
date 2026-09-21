@@ -9,8 +9,9 @@ export const MAX_BLOCKS = 200_000;
  * 严格校验并规范化用户导入的 JSON 数据。
  * 任何不合法输入都返回错误信息；调用方负责在出错时保留当前文档与已采纳版本。
  *
- * 数据约定见 README：顶层对象 { pageHeight, blocks }，
+ * 数据约定见 README：顶层对象 { pageHeight, backPageHeight?, blocks }，
  * 块对象 { id, height, breakAfter?, sameAfter? }，最后一块上的标记被忽略。
+ * 省略 backPageHeight 时为单面模式，解析/计算/导出与旧版逐项一致。
  * 重新导入本工具导出的文件时，多余字段（pages/cost 等）一律忽略。
  */
 export function parseDoc(raw: unknown): { ok: true; model: DocModel } | { ok: false; error: ParseError } {
@@ -26,6 +27,20 @@ export function parseDoc(raw: unknown): { ok: true; model: DocModel } | { ok: fa
   if (pageHeight < MIN_PAGE_HEIGHT || pageHeight > MAX_PAGE_HEIGHT) {
     return { ok: false, error: { message: `pageHeight 必须在 ${MIN_PAGE_HEIGHT} 到 ${MAX_PAGE_HEIGHT} 之间` } };
   }
+
+  // backPageHeight 可选：存在（非 undefined）才启用双面模式，null 等仍属非法。
+  let backPageHeight: number | undefined;
+  if (obj.backPageHeight !== undefined) {
+    if (typeof obj.backPageHeight !== 'number' || !Number.isInteger(obj.backPageHeight)) {
+      return { ok: false, error: { message: 'backPageHeight 必须是整数' } };
+    }
+    if (obj.backPageHeight < MIN_PAGE_HEIGHT || obj.backPageHeight > MAX_PAGE_HEIGHT) {
+      return { ok: false, error: { message: `backPageHeight 必须在 ${MIN_PAGE_HEIGHT} 到 ${MAX_PAGE_HEIGHT} 之间` } };
+    }
+    backPageHeight = obj.backPageHeight;
+  }
+  // 块高允许到两面容量的较大值（块只会在放得下它的那一面成页）。
+  const maxHeight = backPageHeight === undefined ? pageHeight : Math.max(pageHeight, backPageHeight);
 
   const rawBlocks = obj.blocks;
   if (!Array.isArray(rawBlocks)) {
@@ -63,8 +78,11 @@ export function parseDoc(raw: unknown): { ok: true; model: DocModel } | { ok: fa
     if (typeof height !== 'number' || !Number.isInteger(height)) {
       return { ok: false, error: { message: `${where}：height 必须是整数` } };
     }
-    if (height < 1 || height > pageHeight) {
-      return { ok: false, error: { message: `${where}：height 必须在 1 到 pageHeight(${pageHeight}) 之间` } };
+    if (height < 1 || height > maxHeight) {
+      return {
+        ok: false,
+        error: { message: `${where}：height 必须在 1 到 ${maxHeight}(两面页容量较大值) 之间` },
+      };
     }
 
     let edge: Edge = NONE;
@@ -82,7 +100,12 @@ export function parseDoc(raw: unknown): { ok: true; model: DocModel } | { ok: fa
     blocks.push({ id, height, edge });
   }
 
-  return { ok: true, model: { pageHeight, blocks } };
+  // 仅在提供 backPageHeight 时写入该键：省略字段的旧文件解析后结构逐项不变。
+  const model: DocModel =
+    backPageHeight === undefined
+      ? { pageHeight, blocks }
+      : { pageHeight, backPageHeight, blocks };
+  return { ok: true, model };
 }
 
 /** 边界 i 的两个标记是否同置。 */
