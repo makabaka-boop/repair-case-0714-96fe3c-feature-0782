@@ -181,6 +181,16 @@ select {
   padding: 6px 10px;
 }
 .pc-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.side-tag {
+  margin-left: 8px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 400;
+  vertical-align: 1px;
+}
+.side-tag.front { background: #173a5c; color: #a8d4ff; }
+.side-tag.back { background: #3a2a52; color: #d9c6ff; }
 .pc-bar {
   height: 8px;
   background: #0d1117;

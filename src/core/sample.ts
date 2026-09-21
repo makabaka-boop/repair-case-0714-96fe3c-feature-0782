@@ -17,7 +17,9 @@ export const SAMPLE_JSON = `{
 }`;
 
 /** 构造一份随机文档（无冲突、可行），便于手工压测。 */
-export function randomDoc(n: number, pageHeight: number, seed: number): DocModel {
+export function randomDoc(n: number, pageHeight: number, seed: number, backPageHeight?: number): DocModel {
+  // 双面大夹具：块高与同页链都按两侧较小容量生成，保证任意奇偶安排皆可行。
+  const cap = backPageHeight === undefined ? pageHeight : Math.min(pageHeight, backPageHeight);
   let s = seed >>> 0;
   const rand = () => {
     // xorshift32
@@ -29,7 +31,7 @@ export function randomDoc(n: number, pageHeight: number, seed: number): DocModel
   };
 
   const blocks = Array.from({ length: n }, (_, i) => {
-    const height = 1 + Math.floor(rand() * pageHeight);
+    const height = 1 + Math.floor(rand() * cap);
     return { id: `b${i + 1}`, height, edge: NONE as Edge };
   });
 
@@ -40,12 +42,12 @@ export function randomDoc(n: number, pageHeight: number, seed: number): DocModel
     if (r < 0.12) {
       blocks[i].edge = 1;
       chainSum = 0;
-    } else if (r < 0.3 && chainSum + blocks[i].height + blocks[i + 1].height <= pageHeight) {
+    } else if (r < 0.3 && chainSum + blocks[i].height + blocks[i + 1].height <= cap) {
       blocks[i].edge = 2;
       chainSum += blocks[i].height;
     } else {
       chainSum = 0;
     }
   }
-  return { pageHeight, blocks };
+  return backPageHeight === undefined ? { pageHeight, blocks } : { pageHeight, backPageHeight, blocks };
 }

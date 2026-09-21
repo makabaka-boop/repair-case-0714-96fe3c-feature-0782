@@ -19,7 +19,7 @@ export type Edge = 0 | 1 | 2 | 3;
 export interface Block {
   /** 用户提供的唯一 id，允许字符串或数字 */
   id: string | number;
-  /** 块高度，1 .. pageHeight 的整数 */
+  /** 块高度，1 .. 页面容量的整数（双面模式下为 1 .. max(pageHeight, backPageHeight)） */
   height: number;
   /** 与后一块之间的边界标记；最后一块的标记不参与语义，保留为 NONE */
   edge: Edge;
@@ -27,8 +27,14 @@ export interface Block {
 
 /** 可用于计算的规范化文档。 */
 export interface DocModel {
-  /** 页面容量，1 .. 10000 的整数 */
+  /** 页面容量（双面模式下为正面容量），1 .. 10000 的整数 */
   pageHeight: number;
+  /**
+   * 背面容量，1 .. 10000 的整数；存在即启用双面模式。
+   * 双面模式下第 1 页为正面，此后正反交替，各页按自身容量约束与计代价。
+   * 省略时整份文档按单一容量 pageHeight 处理（行为与引入该字段前完全一致）。
+   */
+  backPageHeight?: number;
   /** 1 .. 200000 个块，按原始顺序排列 */
   blocks: Block[];
 }
@@ -39,8 +45,12 @@ export interface PageRange {
   end: number;
   /** 本页已用高度 */
   used: number;
-  /** 本页剩余高度 */
+  /** 本页剩余高度（按本页实际容量计算） */
   remaining: number;
+  /** 面别：仅双面模式填充，第 1 页为 'front'，此后交替；单容量结果无此键 */
+  side?: 'front' | 'back';
+  /** 本页容量：仅双面模式填充；单容量结果无此键（容量即 pageHeight） */
+  capacity?: number;
 }
 
 export interface PaginateResult {

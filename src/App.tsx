@@ -239,7 +239,16 @@ export default function App() {
         <section className="workbench">
           <div className="toolbar">
             <div className="docmeta">
-              页容量 <b>{model.pageHeight}</b> · 共 <b>{model.blocks.length}</b> 块
+              {model.backPageHeight !== undefined ? (
+                <>
+                  页容量 正 <b>{model.pageHeight}</b> · 背 <b>{model.backPageHeight}</b>（双面） · 共{' '}
+                  <b>{model.blocks.length}</b> 块
+                </>
+              ) : (
+                <>
+                  页容量 <b>{model.pageHeight}</b> · 共 <b>{model.blocks.length}</b> 块
+                </>
+              )}
               {conflicts.length > 0 && <span className="tag conflict-tag">冲突 {conflicts.length} 处</span>}
               {fresh?.stale && <span className="tag stale-tag">结果已过期：边界被修改，请重新计算</span>}
               {adopted && <span className="tag adopted-tag">已采纳 {adopted.result.pages.length} 页版本</span>}
@@ -401,6 +410,7 @@ function ResultPanel({
   }
 
   const { result, elapsedMs, stale } = fresh;
+  const duplex = model.backPageHeight !== undefined;
   return (
     <div>
       <div className={`summary ${stale ? 'stale' : ''}`}>
@@ -429,23 +439,34 @@ function ResultPanel({
         items={result.pages}
         rowHeight={58}
         height={360}
-        renderRow={(p, idx) => (
-          <div className="pagecard">
-            <div className="pc-head">
-              <b>第 {idx + 1} 页</b>
-              <span className="muted">
-                块 {p.start + 1}–{p.end} · id {String(model.blocks[p.start].id)} →{' '}
-                {String(model.blocks[p.end - 1].id)}
-              </span>
+        renderRow={(p, idx) => {
+          // 双面模式下各页容量随面别交替；单容量时即 pageHeight。
+          const cap = p.capacity ?? model.pageHeight;
+          return (
+            <div className="pagecard">
+              <div className="pc-head">
+                <b>
+                  第 {idx + 1} 页
+                  {duplex && (
+                    <span className={`side-tag ${p.side === 'back' ? 'back' : 'front'}`}>
+                      {p.side === 'back' ? '背面' : '正面'}
+                    </span>
+                  )}
+                </b>
+                <span className="muted">
+                  块 {p.start + 1}–{p.end} · id {String(model.blocks[p.start].id)} →{' '}
+                  {String(model.blocks[p.end - 1].id)}
+                </span>
+              </div>
+              <div className="pc-bar">
+                <div className="pc-used" style={{ width: `${(p.used / cap) * 100}%` }} />
+              </div>
+              <div className="muted small">
+                已用 {p.used} / {cap} · 剩余 {p.remaining} · 剩余² {p.remaining * p.remaining}
+              </div>
             </div>
-            <div className="pc-bar">
-              <div className="pc-used" style={{ width: `${(p.used / model.pageHeight) * 100}%` }} />
-            </div>
-            <div className="muted small">
-              已用 {p.used} / {model.pageHeight} · 剩余 {p.remaining} · 剩余² {p.remaining * p.remaining}
-            </div>
-          </div>
-        )}
+          );
+        }}
       />
     </div>
   );
